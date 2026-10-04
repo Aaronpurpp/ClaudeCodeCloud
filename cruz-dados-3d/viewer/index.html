@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cruz de dados 3D</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0b0d;color:#ddd;font:14px system-ui,sans-serif;overflow:hidden}
+  #ui{position:fixed;left:12px;top:12px;display:flex;gap:6px;flex-wrap:wrap;z-index:2}
+  button{background:#1d1d22;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;cursor:pointer}
+  button.on{background:#c9a24a;color:#111;border-color:#c9a24a}
+  #info{position:fixed;left:12px;bottom:10px;opacity:.6;font-size:12px}
+</style>
+</head>
+<body>
+<div id="ui"></div>
+<div id="info">arrastra: girar · rueda: zoom · clic derecho: mover</div>
+<script type="importmap">
+{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+
+const q = new URLSearchParams(location.search);
+const MODELS = {oro:'colgante_oro.glb', plata:'colgante_plata.glb', collar:'collar_oro.glb'};
+let current = q.get('model') || 'oro';
+let auto = q.get('auto') !== '0';
+const bgc = q.get('bg') || '0b0b0d';
+
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.9;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#'+bgc);
+const pm = new THREE.PMREMGenerator(renderer);
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.03).texture;
+scene.environmentIntensity = 0.75;
+const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(30,60,80); scene.add(key);
+
+const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 1, 3000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const pivot = new THREE.Group(); scene.add(pivot);
+const loader = new GLTFLoader();
+let ready = false;
+
+function frame(obj){
+  const box = new THREE.Box3().setFromObject(obj), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+  obj.position.sub(c);
+  const r = Math.max(s.x, s.y) * 0.5;
+  const dist = r / Math.tan(THREE.MathUtils.degToRad(camera.fov/2)) * 1.25 / parseFloat(q.get('zoom')||1);
+  const ty = parseFloat(q.get('ty')||0), tx = parseFloat(q.get('tx')||0);
+  camera.position.set(tx, ty, dist); controls.target.set(tx,ty,0); controls.update();
+}
+function load(name){
+  ready = false;
+  while(pivot.children.length) pivot.remove(pivot.children[0]);
+  pivot.rotation.set(0,0,0);
+  loader.load('./models/'+MODELS[name], g => {
+    const o = g.scene; pivot.add(o); frame(o);
+    const ry = parseFloat(q.get('ry')||0), rx = parseFloat(q.get('rx')||0);
+    pivot.rotation.set(THREE.MathUtils.degToRad(rx), THREE.MathUtils.degToRad(ry), 0);
+    ready = true; window.__ready = true;
+  });
+  document.querySelectorAll('#ui button[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m===name));
+}
+const ui = document.getElementById('ui');
+for (const [k,l] of [['oro','Colgante oro'],['plata','Colgante rodio'],['collar','Collar completo']]){
+  const b = document.createElement('button'); b.textContent = l; b.dataset.m = k; b.onclick = () => {current=k; load(k)}; ui.appendChild(b);
+}
+const ba = document.createElement('button'); ba.textContent = 'Girar'; ba.classList.toggle('on', auto);
+ba.onclick = () => {auto=!auto; ba.classList.toggle('on', auto)}; ui.appendChild(ba);
+if (q.get('ui')==='0') {ui.style.display='none'; document.getElementById('info').style.display='none';}
+load(current);
+
+addEventListener('resize', () => {camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight)});
+let last = performance.now();
+renderer.setAnimationLoop(t => {
+  const dt = (t-last)/1000; last = t;
+  if (auto && ready) pivot.rotation.y += dt * 0.6;
+  controls.update(); renderer.render(scene, camera);
+});
+window.__setRot = (rx, ry) => { pivot.rotation.set(THREE.MathUtils.degToRad(rx), THREE.MathUtils.degToRad(ry), 0); };
+</script>
+</body>
+</html>
